@@ -10,7 +10,33 @@
     <packaging>jar</packaging>
 
     <name>Response Projection Engine</name>
-    <description>A JSON response projection engine for Spring Boot</description>
+    <description>A lightweight, annotation-driven JSON response projection engine for Spring Boot applications. Enables dynamic field filtering via HTTP headers with support for nested objects, collections, caching, and allowlist validation.</description>
+    <url>https://github.com/sarthak3d/response-projection-engine</url>
+
+    <!-- License Information -->
+    <licenses>
+        <license>
+            <name>MIT License</name>
+            <url>https://opensource.org/licenses/MIT</url>
+            <distribution>repo</distribution>
+        </license>
+    </licenses>
+
+    <!-- Developer Information -->
+    <developers>
+        <developer>
+            <id>sarthak3d</id>
+            <name>Sarthak Darshan</name>
+            <url>https://github.com/sarthak3d</url>
+        </developer>
+    </developers>
+
+    <!-- Source Control Management -->
+    <scm>
+        <connection>scm:git:git://github.com/sarthak3d/response-projection-engine.git</connection>
+        <developerConnection>scm:git:ssh://github.com:sarthak3d/response-projection-engine.git</developerConnection>
+        <url>https://github.com/sarthak3d/response-projection-engine</url>
+    </scm>
 
     <parent>
         <groupId>org.springframework.boot</groupId>
@@ -84,5 +110,83 @@
             </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <profile>
+            <id>release</id>
+            <build>
+                <plugins>
+                    <!-- Source JAR -->
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-source-plugin</artifactId>
+                        <version>3.3.0</version>
+                        <executions>
+                            <execution>
+                                <id>attach-sources</id>
+                                <goals>
+                                    <goal>jar-no-fork</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+
+                    <!-- Javadoc JAR -->
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-javadoc-plugin</artifactId>
+                        <version>3.6.3</version>
+                        <configuration>
+                            <doclint>none</doclint>
+                            <failOnError>false</failOnError>
+                        </configuration>
+                        <executions>
+                            <execution>
+                                <id>attach-javadocs</id>
+                                <goals>
+                                    <goal>jar</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+
+                    <!-- GPG Signing -->
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-gpg-plugin</artifactId>
+                        <version>3.1.0</version>
+                        <executions>
+                            <execution>
+                                <id>sign-artifacts</id>
+                                <phase>verify</phase>
+                                <goals>
+                                    <goal>sign</goal>
+                                </goals>
+                                <configuration>
+                                    <gpgArguments>
+                                        <arg>--pinentry-mode</arg>
+                                        <arg>loopback</arg>
+                                    </gpgArguments>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+
+                    <!-- Central Portal Publishing Plugin -->
+                    <plugin>
+                        <groupId>org.sonatype.central</groupId>
+                        <artifactId>central-publishing-maven-plugin</artifactId>
+                        <version>0.6.0</version>
+                        <extensions>true</extensions>
+                        <configuration>
+                            <publishingServerId>central</publishingServerId>
+                            <autoPublish>true</autoPublish>
+                            <waitUntil>published</waitUntil>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 
 </project>

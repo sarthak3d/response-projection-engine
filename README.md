@@ -33,6 +33,12 @@ This library allows frontends to request only the fields they need via HTTP head
 - GraphQL replacement
 - Gateway or proxy
 
+## Requirements
+
+- **Java**: 17 or higher
+- **Spring Boot**: 3.2.0 is recommended (compatible with 3.x)
+- **Maven**: 3.6+ (for building from source)
+
 ## Quick Start
 
 ### 1. Add Dependency
@@ -114,11 +120,9 @@ X-Response-Fields: id, name, email
 
 #### **Nested Object Fields**
 
-**Object inside object**
 ```bash
+# Object inside object
 X-Response-Fields: id,profile(avatar,bio)
-```
-
 ```
 
 **Response:**
@@ -134,13 +138,11 @@ X-Response-Fields: id,profile(avatar,bio)
 
 #### **Array Fields**
 
-**Array of primitives (e.g., tags: ["java", "spring"])**
 ```bash
+# Array of primitives (e.g., tags: ["java", "spring"])
 X-Response-Fields: id,tags
-```
 
-**Array of objects - project specific fields from each item**
-```bash
+# Array of objects - project specific fields from each item
 X-Response-Fields: id,orders(id,total)
 ```
 
@@ -158,8 +160,8 @@ X-Response-Fields: id,orders(id,total)
 
 #### **Nested Arrays (Array inside Array)**
 
-**Orders containing items, each item has variants**
 ```bash
+# Orders containing items, each item has variants
 X-Response-Fields: orders(id,items(productId,variants(size,color)))
 ```
 
@@ -181,8 +183,8 @@ X-Response-Fields: orders(id,items(productId,variants(size,color)))
 
 #### **Array Inside Object**
 
-**User has a profile object containing a skills array**
 ```bash
+# User has a profile object containing a skills array
 X-Response-Fields: id,profile(name,skills)
 ```
 
@@ -198,8 +200,8 @@ X-Response-Fields: id,profile(name,skills)
 }
 ```
 
-**User has settings object with notifications array containing objects**
 ```bash
+# User has settings object with notifications array containing objects
 X-Response-Fields: id,settings(theme,notifications(type,enabled))
 ```
 
@@ -218,8 +220,8 @@ X-Response-Fields: id,settings(theme,notifications(type,enabled))
 
 #### **Object Inside Array**
 
-**Array of orders, each order has a nested shipping object**
 ```bash
+# Array of orders, each order has a nested shipping object
 X-Response-Fields: orders(id,shipping(address,city))
 ```
 
@@ -237,8 +239,8 @@ X-Response-Fields: orders(id,shipping(address,city))
 }
 ```
 
-**Array of products with nested manufacturer object**
 ```bash
+# Array of products with nested manufacturer object
 X-Response-Fields: products(name,manufacturer(name,country))
 ```
 
@@ -418,6 +420,7 @@ The library:
 **Eviction timing:**
 - Cache is evicted **after** the method returns successfully
 - If the method throws an exception, cache is not evicted
+- Maintaining Data consistency and is Transaction safety
 
 ## Strict Behavior
 
@@ -535,7 +538,7 @@ com.projection
 ├── exception/           # All exception types
 └── error/               # Error response format
 
-# Test sources only (not packaged in JAR):
+# Test sources only
 test/
 └── com.projection.example/  # Example controller and application
 ```
