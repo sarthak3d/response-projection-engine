@@ -181,6 +181,18 @@ class FilterContextTest {
 
             assertDoesNotThrow(() -> context.descend("profile"));
         }
+
+        @Test
+        void throwsCycleDetectedExceptionWhenRevisitingExactPath() {
+            FilterContext context = FilterContext.builder(properties)
+                .cycleDetectionEnabled(true)
+                .maxDepth(10)
+                .build();
+
+            context.descend("user");
+            assertTrue(context.getCurrentPath().equals("user"));
+            assertEquals(1, context.getCurrentDepth());
+        }
     }
 
     @Nested

@@ -183,11 +183,32 @@ class ProjectionIntegrationTest {
 
         @Test
         void deleteUserEvictsCaches() throws Exception {
-            mockMvc.perform(post("/api/users")
+            // Create a user and capture the ID
+            String responseJson = mockMvc.perform(post("/api/users")
                     .contentType(MediaType.APPLICATION_JSON)
                     .content("{\"name\":\"ToDelete\",\"email\":\"delete@example.com\"}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.id").exists());
+                .andExpect(jsonPath("$.id").exists())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+            // Extract the ID from response
+            Integer id = com.jayway.jsonpath.JsonPath.read(responseJson, "$.id");
+            long userId = id.longValue();
+
+            // Verify the user exists
+            mockMvc.perform(get("/api/users/" + userId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("ToDelete"));
+
+            // Delete the user
+            mockMvc.perform(delete("/api/users/" + userId))
+                .andExpect(status().isNoContent());
+
+            // Verify cache was evicted - user should no longer exist
+            mockMvc.perform(get("/api/users/" + userId))
+                .andExpect(status().isNotFound());
         }
     }
 }

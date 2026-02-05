@@ -134,7 +134,9 @@ class ProjectionCacheManagerTest {
 
         @Test
         void collectionUsesCollectionTtl() throws Exception {
-            properties.getCache().setCollectionTtlSeconds(10);
+            // Set a very short collection TTL (1 second)
+            properties.getCache().setCollectionTtlSeconds(1);
+            properties.getCache().setDefaultTtlSeconds(60);
             cacheManager = new ProjectionCacheManager(properties);
 
             JsonNode response = objectMapper.readTree("""
@@ -144,8 +146,16 @@ class ProjectionCacheManagerTest {
             CacheKey key = CacheKey.of("GET", "/users", null);
             cacheManager.put(key, response, -1, true);
 
+            // Verify it's cached initially
             Optional<CachedResponse> cached = cacheManager.get(key);
-            assertTrue(cached.isPresent());
+            assertTrue(cached.isPresent(), "Response should be cached initially");
+
+            // Wait for collection TTL to expire
+            Thread.sleep(1500);
+
+            // Verify cache has expired
+            Optional<CachedResponse> expired = cacheManager.get(key);
+            assertFalse(expired.isPresent(), "Collection cache should have expired after TTL");
         }
     }
 
@@ -166,6 +176,53 @@ class ProjectionCacheManagerTest {
             
             assertFalse(cacheManager.get(CacheKey.of("GET", "/users/1", null)).isPresent());
             assertTrue(cacheManager.get(CacheKey.of("GET", "/users/2", null)).isPresent());
+        }
+
+        @Test
+        void evictByPathWithHyphenatedParam() throws Exception {
+            JsonNode response = objectMapper.readTree("""
+                {"id": 1}
+                """);
+            cacheManager.put(CacheKey.of("GET", "/users/1", null), response, -1, false);
+            cacheManager.put(CacheKey.of("GET", "/profiles/2", null), response, -1, false);
+            
+            // "user-id" -> sanitized to "userid"
+            // This pattern matches ANY /users/{id}, so /users/1 is evicted.
+            // /profiles/2 should remain.
+            cacheManager.evictByPathPattern("/users/{user-id}");
+            
+            assertFalse(cacheManager.get(CacheKey.of("GET", "/users/1", null)).isPresent());
+            assertTrue(cacheManager.get(CacheKey.of("GET", "/profiles/2", null)).isPresent());
+        }
+
+        @Test
+        void evictByPathWithNumericStartParam() throws Exception {
+            JsonNode response = objectMapper.readTree("""
+                {"id": 1}
+                """);
+            cacheManager.put(CacheKey.of("GET", "/items/1", null), response, -1, false);
+            cacheManager.put(CacheKey.of("GET", "/categories/2", null), response, -1, false);
+            
+            // "1id" -> sanitized to "p1id"
+            cacheManager.evictByPathPattern("/items/{1id}");
+            
+            assertFalse(cacheManager.get(CacheKey.of("GET", "/items/1", null)).isPresent());
+            assertTrue(cacheManager.get(CacheKey.of("GET", "/categories/2", null)).isPresent());
+        }
+
+        @Test
+        void evictByPathWithInvalidCharsFallback() throws Exception {
+            JsonNode response = objectMapper.readTree("""
+                {"id": 1}
+                """);
+            cacheManager.put(CacheKey.of("GET", "/things/1", null), response, -1, false);
+            cacheManager.put(CacheKey.of("GET", "/stuff/2", null), response, -1, false);
+            
+            // "???" -> sanitized to null -> anonymous group
+            cacheManager.evictByPathPattern("/things/{???}");
+            
+            assertFalse(cacheManager.get(CacheKey.of("GET", "/things/1", null)).isPresent());
+            assertTrue(cacheManager.get(CacheKey.of("GET", "/stuff/2", null)).isPresent());
         }
     }
 
@@ -209,7 +266,35 @@ class ProjectionCacheManagerTest {
             CacheKey key = CacheKey.of("GET", "/users/1", null);
             cacheManager.put(key, response, -1, false);
 
-            assertFalse(cacheManager.validateEtag(key, "\"wrong-etag\""));
+            assertFalse(cacheManager.validateEtag(key, "wrong-etag"));
+        }
+
+        @Test
+        void validatesQuotedEtag() throws Exception {
+            JsonNode response = objectMapper.readTree("""
+                {"id": 1}
+                """);
+
+            CacheKey key = CacheKey.of("GET", "/users/1", null);
+            cacheManager.put(key, response, -1, false);
+
+            String etag = cacheManager.get(key).get().getEtag();
+            // Client sends ETag with surrounding quotes - should still match
+            assertTrue(cacheManager.validateEtag(key, "\"" + etag + "\""));
+        }
+
+        @Test
+        void validatesWeakEtag() throws Exception {
+            JsonNode response = objectMapper.readTree("""
+                {"id": 1}
+                """);
+
+            CacheKey key = CacheKey.of("GET", "/users/1", null);
+            cacheManager.put(key, response, -1, false);
+
+            String etag = cacheManager.get(key).get().getEtag();
+            // Client sends weak validator prefix - should still match
+            assertTrue(cacheManager.validateEtag(key, "W/\"" + etag + "\""));
         }
     }
 

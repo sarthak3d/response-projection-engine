@@ -123,7 +123,7 @@ public class UserController {
                 new Settings("dark", true)
             ),
             List.of(
-                new Order(101L, 149.99, "COMPLETED", List.of(
+                new Order(101L, 149.97, "COMPLETED", List.of(
                     new OrderItem(1001L, "Mechanical Keyboard", 2, 59.99),
                     new OrderItem(1002L, "USB-C Hub", 1, 29.99)
                 )),

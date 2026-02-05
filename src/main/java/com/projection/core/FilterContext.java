@@ -53,31 +53,38 @@ public final class FilterContext {
     }
 
     public void descend(String fieldName) {
-        currentDepth++;
-        
-        if (currentPath.isEmpty()) {
-            currentPath = fieldName;
-        } else {
-            currentPath = currentPath + "." + fieldName;
+        if (fieldName == null || fieldName.trim().isEmpty()) {
+            throw new IllegalArgumentException("fieldName must not be null or blank");
         }
 
-        if (currentDepth > maxDepth) {
+        // Compute prospective values before mutation
+        int newDepth = currentDepth + 1;
+        String newPath = currentPath.isEmpty() ? fieldName : currentPath + "." + fieldName;
+
+        // Validate max depth before mutation
+        if (newDepth > maxDepth) {
             throw new MaxDepthExceededException(
-                currentPath, 
+                newPath, 
                 maxDepth, 
-                currentDepth, 
+                newDepth, 
                 properties.getError().getMaxDepth().getStatus()
             );
         }
 
+        // Validate cycle detection before mutation
+        if (cycleDetectionEnabled && visitedPaths.contains(newPath)) {
+            throw new CycleDetectedException(
+                newPath, 
+                properties.getError().getCycle().getStatus()
+            );
+        }
+
+        // All validations passed - now mutate state
+        currentDepth = newDepth;
+        currentPath = newPath;
+        
         if (cycleDetectionEnabled) {
-            if (visitedPaths.contains(currentPath)) {
-                throw new CycleDetectedException(
-                    currentPath, 
-                    properties.getError().getCycle().getStatus()
-                );
-            }
-            visitedPaths.add(currentPath);
+            visitedPaths.add(newPath);
         }
     }
 
@@ -116,6 +123,9 @@ public final class FilterContext {
         private boolean cycleDetectionEnabled;
 
         private Builder(ProjectionProperties properties) {
+            if (properties == null) {
+                throw new IllegalArgumentException("properties must not be null");
+            }
             this.properties = properties;
             this.maxDepth = properties.getMaxDepth();
             this.cycleDetectionEnabled = properties.getCycleDetection().isEnabled();

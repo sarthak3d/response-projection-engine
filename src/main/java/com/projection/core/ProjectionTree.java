@@ -1,7 +1,7 @@
 package com.projection.core;
 
 import java.util.Collections;
-import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 
@@ -24,7 +24,7 @@ public final class ProjectionTree {
     private final boolean isLeaf;
 
     private ProjectionTree(Map<String, ProjectionTree> children) {
-        this.children = Collections.unmodifiableMap(new HashMap<>(children));
+        this.children = Collections.unmodifiableMap(new LinkedHashMap<>(children));
         this.isLeaf = children.isEmpty();
     }
 
@@ -61,16 +61,33 @@ public final class ProjectionTree {
     }
 
     public static class Builder {
-        private final Map<String, ProjectionTree> children = new HashMap<>();
+        private final Map<String, ProjectionTree> children = new LinkedHashMap<>();
 
         public Builder addLeaf(String fieldName) {
+            if (fieldName == null || fieldName.isBlank()) {
+                throw new IllegalArgumentException("fieldName must not be null or blank");
+            }
             children.put(fieldName, ProjectionTree.empty());
             return this;
         }
 
         public Builder addChild(String fieldName, ProjectionTree subtree) {
+            if (fieldName == null || fieldName.isBlank()) {
+                throw new IllegalArgumentException("fieldName must not be null or blank");
+            }
+            if (subtree == null) {
+                throw new IllegalArgumentException("subtree must not be null");
+            }
             children.put(fieldName, subtree);
             return this;
+        }
+
+        public boolean hasChild(String fieldName) {
+            return children.containsKey(fieldName);
+        }
+
+        public ProjectionTree getChild(String fieldName) {
+            return children.get(fieldName);
         }
 
         public ProjectionTree build() {

@@ -20,7 +20,7 @@ public final class CachedResponse {
         this.fullResponse = builder.fullResponse;
         this.etag = builder.etag;
         this.lastModified = builder.lastModified;
-        this.cachedAt = builder.cachedAt != null ? builder.cachedAt : Instant.now();
+        this.cachedAt = builder.cachedAt;
         this.expiresAt = builder.expiresAt;
     }
 
@@ -65,6 +65,7 @@ public final class CachedResponse {
         private Instant lastModified;
         private Instant cachedAt;
         private Instant expiresAt;
+        private Integer ttlSeconds;
 
         public Builder fullResponse(JsonNode fullResponse) {
             this.fullResponse = fullResponse;
@@ -88,16 +89,32 @@ public final class CachedResponse {
 
         public Builder expiresAt(Instant expiresAt) {
             this.expiresAt = expiresAt;
+            this.ttlSeconds = null;
             return this;
         }
 
         public Builder ttlSeconds(int ttlSeconds) {
-            this.expiresAt = Instant.now().plusSeconds(ttlSeconds);
+            this.ttlSeconds = ttlSeconds;
             return this;
         }
 
         public CachedResponse build() {
+            if (fullResponse == null) {
+                throw new IllegalStateException("fullResponse must be set before building CachedResponse");
+            }
+            
+            // Set cachedAt once to avoid time drift between cachedAt and expiresAt
+            if (cachedAt == null) {
+                cachedAt = Instant.now();
+            }
+            
+            // Compute expiresAt from the final cachedAt value
+            if (expiresAt == null && ttlSeconds != null && ttlSeconds > 0) {
+                expiresAt = cachedAt.plusSeconds(ttlSeconds);
+            }
+            
             return new CachedResponse(this);
         }
     }
 }
+

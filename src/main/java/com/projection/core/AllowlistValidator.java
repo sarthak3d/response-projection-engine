@@ -31,6 +31,9 @@ public final class AllowlistValidator {
     }
 
     public void validate(ProjectionTree requested) {
+        if (requested == null) {
+            throw new IllegalArgumentException("requested projection tree must not be null");
+        }
         validateTree(requested, allowedFields, "");
     }
 
@@ -56,13 +59,29 @@ public final class AllowlistValidator {
 
     private static void mergeInto(ProjectionTree.Builder target, ProjectionTree source) {
         for (String fieldName : source.getChildNames()) {
-            ProjectionTree child = source.getChild(fieldName);
-            if (child.isEmpty()) {
-                target.addLeaf(fieldName);
+            ProjectionTree sourceChild = source.getChild(fieldName);
+            
+            if (target.hasChild(fieldName)) {
+                // Field already exists - need to merge subtrees
+                ProjectionTree existingChild = target.getChild(fieldName);
+                
+                if (!sourceChild.isEmpty() || !existingChild.isEmpty()) {
+                    // At least one has nested fields - merge them
+                    ProjectionTree.Builder mergedBuilder = ProjectionTree.builder();
+                    mergeInto(mergedBuilder, existingChild);
+                    mergeInto(mergedBuilder, sourceChild);
+                    target.addChild(fieldName, mergedBuilder.build());
+                }
+                // If both are leaves, no action needed (already in target)
             } else {
-                ProjectionTree.Builder childBuilder = ProjectionTree.builder();
-                mergeInto(childBuilder, child);
-                target.addChild(fieldName, childBuilder.build());
+                // Field doesn't exist - add it
+                if (sourceChild.isEmpty()) {
+                    target.addLeaf(fieldName);
+                } else {
+                    ProjectionTree.Builder childBuilder = ProjectionTree.builder();
+                    mergeInto(childBuilder, sourceChild);
+                    target.addChild(fieldName, childBuilder.build());
+                }
             }
         }
     }

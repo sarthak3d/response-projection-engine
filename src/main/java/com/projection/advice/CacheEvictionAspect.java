@@ -70,9 +70,20 @@ public class CacheEvictionAspect {
         for (int i = 0; i < parameters.length; i++) {
             PathVariable annotation = parameters[i].getAnnotation(PathVariable.class);
             if (annotation != null) {
-                String name = annotation.value().isEmpty() 
-                    ? parameters[i].getName() 
-                    : annotation.value();
+                String name;
+                if (!annotation.value().isEmpty()) {
+                    name = annotation.value();
+                } else {
+                    name = parameters[i].getName();
+                    // Detect synthetic parameter names (arg0, arg1, etc.)
+                    // These occur when compiled without -parameters flag
+                    if (name.matches("arg\\d+")) {
+                        log.warn("Detected synthetic parameter name '{}' in method {}.{}() - " +
+                                "cache eviction path variables may not resolve correctly. " +
+                                "Either specify @PathVariable(\"name\") explicitly or compile with -parameters flag.",
+                                name, method.getDeclaringClass().getSimpleName(), method.getName());
+                    }
+                }
                 variables.put(name, args[i]);
             }
         }

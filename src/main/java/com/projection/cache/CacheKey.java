@@ -6,27 +6,39 @@ import java.util.stream.Collectors;
 
 /**
  * Normalized cache key for projection cache entries.
- * Format: METHOD:/path?sortedQueryParams
+ * Format: METHOD:/path?sortedQueryParams[@userContext]
  * 
  * Query parameters are sorted alphabetically to ensure consistent cache hits
  * regardless of parameter order in the original request.
+ * 
+ * When user context is enabled, the user identifier is appended to the key
+ * to prevent data leakage across users for user-specific endpoints.
  */
 public final class CacheKey {
 
     private final String method;
     private final String path;
     private final String normalizedQuery;
+    private final String userContext;
     private final String key;
 
-    private CacheKey(String method, String path, String queryString) {
+    private CacheKey(String method, String path, String queryString, String userContext) {
+        if (method == null || method.isBlank()) {
+            throw new IllegalArgumentException("method must not be null or blank");
+        }
         this.method = method.toUpperCase();
         this.path = normalizePath(path);
         this.normalizedQuery = normalizeQuery(queryString);
+        this.userContext = userContext;
         this.key = buildKey();
     }
 
     public static CacheKey of(String method, String path, String queryString) {
-        return new CacheKey(method, path, queryString);
+        return new CacheKey(method, path, queryString, null);
+    }
+
+    public static CacheKey of(String method, String path, String queryString, String userContext) {
+        return new CacheKey(method, path, queryString, userContext);
     }
 
     public String getKey() {
@@ -39,6 +51,10 @@ public final class CacheKey {
 
     public String getPath() {
         return path;
+    }
+
+    public String getUserContext() {
+        return userContext;
     }
 
     private String normalizePath(String path) {
@@ -72,6 +88,9 @@ public final class CacheKey {
         if (!normalizedQuery.isEmpty()) {
             sb.append("?").append(normalizedQuery);
         }
+        if (userContext != null && !userContext.isBlank()) {
+            sb.append("@").append(userContext);
+        }
         return sb.toString();
     }
 
@@ -93,3 +112,4 @@ public final class CacheKey {
         return key;
     }
 }
+

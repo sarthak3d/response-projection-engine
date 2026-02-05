@@ -1,7 +1,4 @@
-<p align="center">
-  <img src="src\main\resources\icon\logo.png" alt="Response Projection Engine Logo" width="300">
-</p>
-
+<p align="center"><img src="src/main/resources/icon/logo.png" alt="Response Projection Engine Logo" width="300"></p>
 <h1 align="center">Response Projection Engine</h1>
 
 <p align="center">
@@ -43,12 +40,20 @@ This library allows frontends to request only the fields they need via HTTP head
 
 ### 1. Add Dependency
 
+#### Maven
+
 ```xml
 <dependency>
     <groupId>io.github.sarthak3d</groupId>
     <artifactId>response-projection-engine</artifactId>
     <version>1.0.0</version>
 </dependency>
+```
+
+#### Gradle
+
+```java
+implementation("io.github.sarthak3d:response-projection-engine:1.0.0")
 ```
 
 ### 2. Annotate Endpoints
@@ -104,191 +109,7 @@ When writing projections in the `X-Response-Fields` header, follow these rules:
 4. **Multi-level nesting** is supported: `level1(level2(level3))`
 5. **No trailing commas** — `id,name,` is invalid
 
-**Header Examples:**
-
-#### Basic Examples
-```bash
-# Single field
-X-Response-Fields: id
-
-# Multiple fields
-X-Response-Fields: id,name,email
-
-# With spaces (optional, ignored)
-X-Response-Fields: id, name, email
-```
-
-#### **Nested Object Fields**
-
-```bash
-# Object inside object
-X-Response-Fields: id,profile(avatar,bio)
-```
-
-**Response:**
-```json
-{
-  "id": 1,
-  "profile": {
-    "avatar": "url",
-    "bio": "text"
-  }
-}
-```
-
-#### **Array Fields**
-
-```bash
-# Array of primitives (e.g., tags: ["java", "spring"])
-X-Response-Fields: id,tags
-
-# Array of objects - project specific fields from each item
-X-Response-Fields: id,orders(id,total)
-```
-
-
-**Response:**
-```json
-{
-  "id": 1,
-  "orders": [
-    { "id": 101, "total": 99.99 },
-    { "id": 102, "total": 49.99 }
-  ]
-}
-```
-
-#### **Nested Arrays (Array inside Array)**
-
-```bash
-# Orders containing items, each item has variants
-X-Response-Fields: orders(id,items(productId,variants(size,color)))
-```
-
-
-**Response:**
-```json
-{
-  "orders": [{
-    "id": 1,
-    "items": [{
-      "productId": "A1",
-      "variants": [
-        { "size": "M", "color": "red" }
-      ]
-    }]
-  }]
-}
-```
-
-#### **Array Inside Object**
-
-```bash
-# User has a profile object containing a skills array
-X-Response-Fields: id,profile(name,skills)
-```
-
-
-**Response:**
-```json
-{
-  "id": 1,
-  "profile": {
-    "name": "John",
-    "skills": ["java", "python"]
-  }
-}
-```
-
-```bash
-# User has settings object with notifications array containing objects
-X-Response-Fields: id,settings(theme,notifications(type,enabled))
-```
-
-**Response:**
-```json
-{
-  "id": 1,
-  "settings": {
-    "theme": "dark",
-    "notifications": [
-      { "type": "email", "enabled": true }
-    ]
-  }
-}
-```
-
-#### **Object Inside Array**
-
-```bash
-# Array of orders, each order has a nested shipping object
-X-Response-Fields: orders(id,shipping(address,city))
-```
-
-
-**Response:**
-```json
-{
-  "orders": [{
-    "id": 1,
-    "shipping": {
-      "address": "123 Main St",
-      "city": "NYC"
-    }
-  }]
-}
-```
-
-```bash
-# Array of products with nested manufacturer object
-X-Response-Fields: products(name,manufacturer(name,country))
-```
-
-**Response:**
-```json
-{
-  "products": [{
-    "name": "Widget",
-    "manufacturer": {
-      "name": "Acme",
-      "country": "USA"
-    }
-  }]
-}
-```
-
-#### Complex Real-World Examples
-```bash
-# E-commerce order with deep nesting
-X-Response-Fields: id,customer(name,email),items(product(name,price),quantity),shipping(address(street,city,zip))
-
-# Blog post with author and comments
-X-Response-Fields: id,title,author(name,avatar),comments(id,text,user(name))
-
-# Organization with departments and employees
-X-Response-Fields: name,departments(name,manager(name),employees(id,name,role))
-
-# API response with metadata and paginated data
-X-Response-Fields: metadata(total,page),data(id,name,tags)
-```
-
-#### Mixed Depth Examples
-```bash
-# Level 1 only
-X-Response-Fields: id,name
-
-# Level 2 (object in object)
-X-Response-Fields: id,profile(bio)
-
-# Level 3 (array in object in root)
-X-Response-Fields: id,profile(skills(name,level))
-
-# Level 4 (object in array in object in root)
-X-Response-Fields: id,profile(certifications(issuer(name,website)))
-
-# Level 5 (maximum default depth)
-X-Response-Fields: company(departments(teams(members(contact(email)))))
-```
+For more examples, see [Example](Example.md)
 
 **Common Mistakes:**
 | Invalid | Why | Correct |
@@ -340,10 +161,41 @@ public List<User> getAllUsers() {
 |-----------|------|-------------|---------|
 | `ttlSeconds` | `int` | Cache time-to-live in seconds. When set to `-1`, uses the global configuration value from `application.properties`. | `-1` |
 | `collection` | `boolean` | Set to `true` when the endpoint returns a list/array. Collections use a separate, typically shorter TTL (`response.projection.cache.collection-ttl-seconds`). | `false` |
+| `userContext` | `boolean` | Enables per-user cache isolation. When `true`, the cache key includes the user's identity (from header or Principal), preventing data leakage across users. | `false` |
 
 **What the attributes control:**
 - **ttlSeconds**: How long the full response is cached before being re-fetched. Use `-1` to inherit from config, or set a specific value to override.
 - **collection**: Collections (lists) often change more frequently than single items, so they use a shorter cache TTL by default (10s vs 60s).
+- **userContext**: Prevents data leakage for user-specific endpoints. See examples below.
+
+**Per-User Cache Isolation (`userContext`):**
+
+```java
+// Shared cache (default) - same response cached for all users
+@GetMapping("/weather")
+@Projectable
+public Weather getWeather() { ... }
+
+// Per-user cache - separate cache entry per user
+@GetMapping("/me")
+@Projectable(userContext = true)
+public User getCurrentUser() { ... }
+
+// Per-user cache with collection
+@GetMapping("/my-orders")
+@Projectable(userContext = true, collection = true)
+public List<Order> getMyOrders() { ... }
+```
+
+User identity is extracted from:
+1. **Header** - Configured via `response.projection.cache.user-context.header-name` (default: `X-User-Id`)
+2. **Spring Security Principal** - Falls back to `request.getUserPrincipal().getName()`
+
+| Endpoint Type | `userContext` | Cache Key Example |
+|---------------|---------------|-------------------|
+| Public data (`/weather`) | `false` | `GET:/weather` |
+| User-specific (`/me`) | `true` | `GET:/me@user123` |
+| URL with userId (`/users/{id}`) | `false` | `GET:/users/5` (already unique) |
 
 ### @ProjectableFields
 
@@ -452,8 +304,9 @@ Full backend responses are cached (never projected variants):
 - **TTL-based expiration**: Configurable default and collection TTLs
 - **ETag/Last-Modified**: HTTP conditional request support
 - **Manual eviction**: Via `@InvalidateProjectionCache` annotation
+- **User context isolation**: Optional per-user cache keys to prevent data leakage
 
-Cache key format: `METHOD:/path?sortedQueryParams`
+Cache key format: `METHOD:/path?sortedQueryParams[@userContext]`
 
 ## Configuration
 
@@ -470,10 +323,14 @@ response.projection.cycle-detection.enabled=true
 
 # Caching
 response.projection.cache.enabled=true
-response.projection.cache.default-ttl-seconds=60
-response.projection.cache.collection-ttl-seconds=10
+response.projection.cache.default-ttl-seconds=60      # TTL for single items (/users/{id})
+response.projection.cache.collection-ttl-seconds=10   # Shorter TTL for collections (change often)
 response.projection.cache.conditional.enabled=true
 response.projection.cache.manual-eviction.enabled=true
+
+# User context header for per-user cache isolation
+# Used when @Projectable(userContext = true) is set
+response.projection.cache.user-context.header-name=X-User-Id
 
 # Trace IDs in error responses
 response.projection.trace-id.enabled=true
@@ -498,51 +355,6 @@ Frontend expresses intent via the projection header only.
 
 Backend errors always pass through untouched. The projection library only processes successful (2xx) responses.
 
-## Architecture
-
-```
-Controller returns object
-        |
-ResponseBodyAdvice intercepts
-        |
-Check @Projectable
-        |
-Cache lookup (full response)
-        |
-Parse projection header
-        |
-Build ProjectionTree
-        |
-Validate against @ProjectableFields (if present)
-        |
-Create FilterContext
-        |
-Apply JsonNode filtering
-   - path tracking
-   - depth check
-   - strict validation
-        |
-Return filtered JSON
-```
-
-## Package Structure
-
-```
-com.projection
-├── annotation/          # @Projectable, @ProjectableFields, @InvalidateProjectionCache
-├── config/              # Auto-configuration and properties
-├── core/                # ProjectionTree, FilterContext, AllowlistValidator
-├── projector/           # ResponseProjector SPI and JSON implementation
-├── cache/               # CacheManager, CacheKey, CachedResponse
-├── advice/              # ResponseBodyAdvice and cache eviction aspect
-├── exception/           # All exception types
-└── error/               # Error response format
-
-# Test sources only
-test/
-└── com.projection.example/  # Example controller and application
-```
-
 ## Building
 
 ```bash
@@ -557,7 +369,7 @@ mvn test
 
 ## Running Example Application
 
-The example application is located in `src/test/java/com/projection/example/` to keep it out of the production JAR.
+The example application is located in `src/test/java/com/projection/example/`.
 
 ```bash
 mvn spring-boot:run -Dspring-boot.run.main-class=com.projection.example.ExampleApplication

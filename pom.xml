@@ -6,7 +6,7 @@
 
     <groupId>io.github.sarthak3d</groupId>
     <artifactId>response-projection-engine</artifactId>
-    <version>1.0.0</version>
+    <version>1.2.0</version>
     <packaging>jar</packaging>
 
     <name>Response Projection Engine</name>
@@ -34,8 +34,7 @@
     <!-- Source Control Management -->
     <scm>
         <connection>scm:git:git://github.com/sarthak3d/response-projection-engine.git</connection>
-        <developerConnection>scm:git:ssh://github.com:sarthak3d/response-projection-engine.git</developerConnection>
-        <url>https://github.com/sarthak3d/response-projection-engine</url>
+        <developerConnection>scm:git:ssh://git@github.com/sarthak3d/response-projection-engine.git</developerConnection>        <url>https://github.com/sarthak3d/response-projection-engine</url>
     </scm>
 
     <parent>

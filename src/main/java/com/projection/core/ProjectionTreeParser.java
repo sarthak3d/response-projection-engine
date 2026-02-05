@@ -14,11 +14,15 @@ import com.projection.exception.InvalidProjectionSyntaxException;
  */
 public final class ProjectionTreeParser {
 
+    private final String original;
     private final String input;
+    private final int baseOffset;
     private int position;
 
-    private ProjectionTreeParser(String input) {
+    private ProjectionTreeParser(String original, String input, int baseOffset) {
+        this.original = original;
         this.input = input;
+        this.baseOffset = baseOffset;
         this.position = 0;
     }
 
@@ -27,10 +31,17 @@ public final class ProjectionTreeParser {
             return ProjectionTree.empty();
         }
 
-        ProjectionTreeParser parser = new ProjectionTreeParser(projection.trim());
+        String trimmed = projection.trim();
+        int baseOffset = projection.indexOf(trimmed.charAt(0));
+        
+        ProjectionTreeParser parser = new ProjectionTreeParser(projection, trimmed, baseOffset);
         ProjectionTree tree = parser.parseProjection();
         parser.expectEnd();
         return tree;
+    }
+
+    private int originalPosition() {
+        return baseOffset + position;
     }
 
     private ProjectionTree parseProjection() {
@@ -68,13 +79,13 @@ public final class ProjectionTreeParser {
         int start = position;
 
         if (position >= input.length()) {
-            throw new InvalidProjectionSyntaxException(input, position, "Expected field name");
+            throw new InvalidProjectionSyntaxException(original, originalPosition(), "Expected field name");
         }
 
         char firstChar = input.charAt(position);
         if (!isNameStart(firstChar)) {
             throw new InvalidProjectionSyntaxException(
-                input, position, 
+                original, originalPosition(), 
                 String.format("Invalid field name start character: '%c'", firstChar)
             );
         }
@@ -107,7 +118,7 @@ public final class ProjectionTreeParser {
         skipWhitespace();
         if (position >= input.length()) {
             throw new InvalidProjectionSyntaxException(
-                input, position, 
+                original, originalPosition(), 
                 String.format("Expected '%c' but reached end of input", expected)
             );
         }
@@ -115,7 +126,7 @@ public final class ProjectionTreeParser {
         char actual = input.charAt(position);
         if (actual != expected) {
             throw new InvalidProjectionSyntaxException(
-                input, position, 
+                original, originalPosition(), 
                 String.format("Expected '%c' but found '%c'", expected, actual)
             );
         }
@@ -132,9 +143,10 @@ public final class ProjectionTreeParser {
         skipWhitespace();
         if (position < input.length()) {
             throw new InvalidProjectionSyntaxException(
-                input, position, 
+                original, originalPosition(), 
                 String.format("Unexpected character '%c' after valid projection", input.charAt(position))
             );
         }
     }
 }
+

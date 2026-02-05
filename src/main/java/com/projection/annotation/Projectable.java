@@ -30,4 +30,19 @@ public @interface Projectable {
      * Collections may have different TTL settings.
      */
     boolean collection() default false;
+
+    /**
+     * Enables per-user cache isolation for this endpoint.
+     * When true, the cache key includes the user's identity, preventing
+     * data leakage across different users.
+     * 
+     * User identity is extracted from:
+     * 1. The header specified in response.projection.cache.user-context.header-name (default: X-User-Id)
+     * 2. Spring Security Principal (request.getUserPrincipal().getName())
+     * 
+     * Use this for endpoints that return user-specific data (e.g., /api/me, /api/my-orders).
+     * Leave as false for shared/public data (e.g., /api/weather, /api/products).
+     */
+    boolean userContext() default false;
 }
+

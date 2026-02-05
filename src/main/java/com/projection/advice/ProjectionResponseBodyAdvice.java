@@ -117,7 +117,7 @@ public class ProjectionResponseBodyAdvice implements ResponseBodyAdvice<Object> 
         FilterContext context = FilterContext.builder(properties).build();
 
         try {
-            CacheKey cacheKey = buildCacheKey(servletRequest);
+            CacheKey cacheKey = buildCacheKey(servletRequest, projectable);
             JsonNode fullResponse = getOrCacheFullResponse(body, cacheKey, projectable);
 
             if (projectionHeader == null || projectionHeader.isBlank()) {
@@ -154,6 +154,10 @@ public class ProjectionResponseBodyAdvice implements ResponseBodyAdvice<Object> 
                 e.getPath(),
                 context.getTraceId()
             );
+        } catch (IllegalStateException e) {
+            // Re-throw to prevent data leakage (handled by global error handler or results in 500)
+            log.error("Security violation [traceId={}]: {}", context.getTraceId(), e.getMessage());
+            throw e;
         } catch (Exception e) {
             log.error("Unexpected error during projection [traceId={}]", context.getTraceId(), e);
             return body;
@@ -175,12 +179,42 @@ public class ProjectionResponseBodyAdvice implements ResponseBodyAdvice<Object> 
         return fullResponse;
     }
 
-    private CacheKey buildCacheKey(HttpServletRequest request) {
+    private CacheKey buildCacheKey(HttpServletRequest request, Projectable projectable) {
+        String userContext = extractUserContext(request, projectable);
         return CacheKey.of(
             request.getMethod(),
             request.getRequestURI(),
-            request.getQueryString()
+            request.getQueryString(),
+            userContext
         );
+    }
+
+    private String extractUserContext(HttpServletRequest request, Projectable projectable) {
+        if (!projectable.userContext()) {
+            return null;
+        }
+
+        String headerName = null;
+        if (properties.getCache() != null && properties.getCache().getUserContext() != null) {
+            headerName = properties.getCache().getUserContext().getHeaderName();
+        }
+
+        if (headerName != null && !headerName.isBlank()) {
+            String headerValue = request.getHeader(headerName);
+            if (headerValue != null && !headerValue.isBlank()) {
+                return headerValue;
+            }
+        }
+
+        if (request.getUserPrincipal() != null) {
+            return request.getUserPrincipal().getName();
+        }
+
+        String logHeaderName = (headerName != null) ? headerName : "<missing-header-config>";
+        throw new IllegalStateException(String.format(
+            "User context caching is enabled for %s but no user identifier found. " +
+            "Expected header '%s' or authenticated Principal. Aborting to prevent data leakage.",
+            request.getRequestURI(), logHeaderName));
     }
 
     private HttpServletRequest extractServletRequest(ServerHttpRequest request) {

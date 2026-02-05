@@ -88,6 +88,7 @@ public class ProjectionProperties {
         private int collectionTtlSeconds = 10;
         private Conditional conditional = new Conditional();
         private ManualEviction manualEviction = new ManualEviction();
+        private UserContext userContext = new UserContext();
 
         public boolean isEnabled() {
             return enabled;
@@ -129,6 +130,14 @@ public class ProjectionProperties {
             this.manualEviction = manualEviction;
         }
 
+        public UserContext getUserContext() {
+            return userContext;
+        }
+
+        public void setUserContext(UserContext userContext) {
+            this.userContext = userContext;
+        }
+
         public static class Conditional {
             private boolean enabled = true;
 
@@ -150,6 +159,22 @@ public class ProjectionProperties {
 
             public void setEnabled(boolean enabled) {
                 this.enabled = enabled;
+            }
+        }
+
+        /**
+         * User context configuration for per-user cache isolation.
+         * The header name is used when @Projectable(userContext = true) is set.
+         */
+        public static class UserContext {
+            private String headerName = "X-User-Id";
+
+            public String getHeaderName() {
+                return headerName;
+            }
+
+            public void setHeaderName(String headerName) {
+                this.headerName = headerName;
             }
         }
     }
