@@ -4,6 +4,8 @@ import com.projection.config.ProjectionProperties;
 import com.projection.exception.CycleDetectedException;
 import com.projection.exception.MaxDepthExceededException;
 
+import java.util.ArrayDeque;
+import java.util.Deque;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.UUID;
@@ -12,8 +14,8 @@ import java.util.UUID;
  * Per-request execution context for projection operations.
  * Tracks path, depth, visited nodes, and provides guardrails during traversal.
  * 
- * This class is intentionally free of HTTP, Spring, or security dependencies
- * to keep it testable and reusable.
+ * Uses lazy path construction to avoid string concatenation during successful traversals.
+ * The full path string is only materialized when needed for error messages.
  */
 public final class FilterContext {
 
@@ -22,8 +24,7 @@ public final class FilterContext {
     private final boolean cycleDetectionEnabled;
     private final ProjectionProperties properties;
 
-    private String currentPath;
-    private int currentDepth;
+    private final Deque<String> pathStack;
     private final Set<String> visitedPaths;
 
     private FilterContext(Builder builder) {
@@ -31,8 +32,7 @@ public final class FilterContext {
         this.maxDepth = builder.maxDepth;
         this.cycleDetectionEnabled = builder.cycleDetectionEnabled;
         this.properties = builder.properties;
-        this.currentPath = "";
-        this.currentDepth = 0;
+        this.pathStack = new ArrayDeque<>();
         this.visitedPaths = new HashSet<>();
     }
 
@@ -40,76 +40,111 @@ public final class FilterContext {
         return traceId;
     }
 
+    /**
+     * Materializes the current path from the stack.
+     * This is the "lazy" part - we only build the string when requested.
+     */
     public String getCurrentPath() {
-        return currentPath;
+        return materializePath();
     }
 
     public int getCurrentDepth() {
-        return currentDepth;
+        return pathStack.size();
     }
 
     public ProjectionProperties getProperties() {
         return properties;
     }
 
+    /**
+     * Descends into a nested field, pushing it onto the path stack.
+     * Validates depth and cycle constraints before any state mutation.
+     */
     public void descend(String fieldName) {
         if (fieldName == null || fieldName.trim().isEmpty()) {
             throw new IllegalArgumentException("fieldName must not be null or blank");
         }
 
-        // Compute prospective values before mutation
-        int newDepth = currentDepth + 1;
-        String newPath = currentPath.isEmpty() ? fieldName : currentPath + "." + fieldName;
-
-        // Validate max depth before mutation
+        int newDepth = pathStack.size() + 1;
+        
         if (newDepth > maxDepth) {
+            String errorPath = buildPath(fieldName);
             throw new MaxDepthExceededException(
-                newPath, 
+                errorPath, 
                 maxDepth, 
                 newDepth, 
                 properties.getError().getMaxDepth().getStatus()
             );
         }
 
-        // Validate cycle detection before mutation
-        if (cycleDetectionEnabled && visitedPaths.contains(newPath)) {
-            throw new CycleDetectedException(
-                newPath, 
-                properties.getError().getCycle().getStatus()
-            );
+        if (cycleDetectionEnabled) {
+            String prospectivePath = buildPath(fieldName);
+            if (visitedPaths.contains(prospectivePath)) {
+                throw new CycleDetectedException(
+                    prospectivePath, 
+                    properties.getError().getCycle().getStatus()
+                );
+            }
+            visitedPaths.add(prospectivePath);
         }
 
-        // All validations passed - now mutate state
-        currentDepth = newDepth;
-        currentPath = newPath;
-        
-        if (cycleDetectionEnabled) {
-            visitedPaths.add(newPath);
-        }
+        pathStack.push(fieldName);
     }
 
+    /**
+     * Ascends from a nested field, popping it from the path stack.
+     */
     public void ascend() {
-        if (cycleDetectionEnabled && !currentPath.isEmpty()) {
+        if (pathStack.isEmpty()) {
+            return;
+        }
+
+        if (cycleDetectionEnabled) {
+            String currentPath = materializePath();
             visitedPaths.remove(currentPath);
         }
 
-        if (currentDepth > 0) {
-            currentDepth--;
-        }
-
-        int lastDot = currentPath.lastIndexOf('.');
-        if (lastDot > 0) {
-            currentPath = currentPath.substring(0, lastDot);
-        } else {
-            currentPath = "";
-        }
+        pathStack.pop();
     }
 
+    /**
+     * Builds a full path by appending the given field name to the current path.
+     * This is used for error messages when a field is missing.
+     * The path is computed immediately to preserve context before any state changes.
+     * 
+     * @throws IllegalArgumentException if fieldName is null or blank
+     */
     public String buildPath(String fieldName) {
-        if (currentPath.isEmpty()) {
+        if (fieldName == null || fieldName.trim().isEmpty()) {
+            throw new IllegalArgumentException("fieldName must not be null or blank");
+        }
+        if (pathStack.isEmpty()) {
             return fieldName;
         }
-        return currentPath + "." + fieldName;
+        return materializePath() + "." + fieldName;
+    }
+
+    /**
+     * Materializes the path stack into a dot-separated string.
+     * Uses a StringBuilder for efficient concatenation.
+     * Returns an empty string if the stack is empty.
+     */
+    private String materializePath() {
+        if (pathStack.isEmpty()) {
+            return "";
+        }
+
+        Object[] segments = pathStack.toArray();
+        int length = segments.length;
+        
+        StringBuilder sb = new StringBuilder();
+        for (int i = length - 1; i >= 0; i--) {
+            if (sb.length() > 0) {
+                sb.append('.');
+            }
+            sb.append(segments[i]);
+        }
+        return sb.toString();
     }
 
     public static Builder builder(ProjectionProperties properties) {

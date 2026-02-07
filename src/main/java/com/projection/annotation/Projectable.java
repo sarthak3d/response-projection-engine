@@ -44,5 +44,20 @@ public @interface Projectable {
      * Leave as false for shared/public data (e.g., /api/weather, /api/products).
      */
     boolean userContext() default false;
+
+    /**
+     * Restricts which fields can be projected from an endpoint's response.
+     * When specified, only the listed fields are allowed in projection requests.
+     * When empty (default), all fields in the response are projectable.
+     * 
+     * This provides an allowlist mechanism for sensitive endpoints where
+     * certain fields should never be exposed regardless of client requests.
+     * 
+     * Uses the same DSL syntax as the projection header.
+     * Examples:
+     * - Simple fields: {"id", "name", "email"}
+     * - Nested fields: {"profile(avatar,bio)", "orders(id,total)"}
+     */
+    String[] allowedFields() default {};
 }
 

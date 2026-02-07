@@ -9,7 +9,7 @@ import com.projection.core.FilterContext;
 import com.projection.core.ProjectionTree;
 import com.projection.exception.MissingFieldException;
 
-import java.util.Iterator;
+import java.util.List;
 
 /**
  * JSON response projector using Jackson Tree Model.
@@ -63,9 +63,54 @@ public class JsonResponseProjector implements ResponseProjector {
     private JsonNode projectArray(ArrayNode array, ProjectionTree projection, FilterContext context) {
         ArrayNode result = JsonNodeFactory.instance.arrayNode(array.size());
 
-        for (JsonNode element : array) {
-            JsonNode projected = projectNode(element, projection, context);
-            result.add(projected);
+        int memoizationThreshold = properties.getMemoizationThreshold();
+        if (array.size() < memoizationThreshold) {
+            for (JsonNode element : array) {
+                JsonNode projected = projectNode(element, projection, context);
+                result.add(projected);
+            }
+        } else {
+            List<ProjectionTree.FieldInstruction> instructions = projection.compile();
+            for (JsonNode element : array) {
+                if (element.isObject()) {
+                    JsonNode projected = projectObjectMemoized((ObjectNode) element, instructions, context);
+                    result.add(projected);
+                } else {
+                    result.add(projectNode(element, projection, context));
+                }
+            }
+        }
+
+        return result;
+    }
+
+    private JsonNode projectObjectMemoized(ObjectNode object, List<ProjectionTree.FieldInstruction> instructions, FilterContext context) {
+        ObjectNode result = JsonNodeFactory.instance.objectNode();
+
+        for (ProjectionTree.FieldInstruction instr : instructions) {
+            String fieldName = instr.fieldName();
+            
+            JsonNode fieldValue = object.get(fieldName);
+            
+            if (fieldValue == null) {
+                String fullPath = context.buildPath(fieldName);
+                throw new MissingFieldException(
+                    fullPath, 
+                    properties.getError().getMissingField().getStatus()
+                );
+            }
+
+            if (instr.isLeaf()) {
+                result.set(fieldName, fieldValue);
+            } else {
+                context.descend(fieldName);
+                try {
+                    JsonNode projectedChild = projectNode(fieldValue, instr.childTree(), context);
+                    result.set(fieldName, projectedChild);
+                } finally {
+                    context.ascend();
+                }
+            }
         }
 
         return result;
@@ -75,7 +120,9 @@ public class JsonResponseProjector implements ResponseProjector {
         ObjectNode result = JsonNodeFactory.instance.objectNode();
 
         for (String requestedField : projection.getChildNames()) {
-            if (!object.has(requestedField)) {
+            JsonNode fieldValue = object.get(requestedField);
+
+            if (fieldValue == null) {
                 String fullPath = context.buildPath(requestedField);
                 throw new MissingFieldException(
                     fullPath, 
@@ -83,7 +130,6 @@ public class JsonResponseProjector implements ResponseProjector {
                 );
             }
 
-            JsonNode fieldValue = object.get(requestedField);
             ProjectionTree childProjection = projection.getChild(requestedField);
 
             if (childProjection.isEmpty()) {

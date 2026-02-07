@@ -27,7 +27,7 @@ class AdditionalIntegrationTest {
         @Test
         void projectsArrayInsideObject() throws Exception {
             // User(profile(settings(notifications))) - 3 levels, valid
-            // Using /api/users (which returns a list) to bypass strict @ProjectableFields on /api/users/{id}
+            // Using /api/users (which returns a list) to bypass strict allowedFields on /api/users/{id}
             mockMvc.perform(get("/api/users")
                     .header("X-Response-Fields", "profile(settings(notifications))"))
                 .andExpect(status().isOk())

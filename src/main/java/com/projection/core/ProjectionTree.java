@@ -1,7 +1,9 @@
 package com.projection.core;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -22,10 +24,26 @@ public final class ProjectionTree {
 
     private final Map<String, ProjectionTree> children;
     private final boolean isLeaf;
+    private final List<FieldInstruction> compiledInstructions;
 
     private ProjectionTree(Map<String, ProjectionTree> children) {
         this.children = Collections.unmodifiableMap(new LinkedHashMap<>(children));
         this.isLeaf = children.isEmpty();
+        this.compiledInstructions = compileInstructions(this.children);
+    }
+
+    private static List<FieldInstruction> compileInstructions(Map<String, ProjectionTree> children) {
+        if (children.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<FieldInstruction> instructions = new ArrayList<>(children.size());
+        for (Map.Entry<String, ProjectionTree> entry : children.entrySet()) {
+            String fieldName = entry.getKey();
+            ProjectionTree childTree = entry.getValue();
+            boolean isLeaf = childTree.isEmpty();
+            instructions.add(new FieldInstruction(fieldName, childTree, isLeaf));
+        }
+        return Collections.unmodifiableList(instructions);
     }
 
     public boolean hasChild(String fieldName) {
@@ -50,6 +68,21 @@ public final class ProjectionTree {
 
     public int size() {
         return children.size();
+    }
+
+    /**
+     * Represents a pre-computed projection instruction for a single field.
+     * Used to avoid repeated Map lookups when projecting arrays.
+     */
+    public record FieldInstruction(String fieldName, ProjectionTree childTree, boolean isLeaf) {}
+
+    /**
+     * Returns the pre-compiled list of field instructions.
+     * This list is computed once during construction and cached,
+     * allowing efficient iteration without Map lookups.
+     */
+    public List<FieldInstruction> compile() {
+        return compiledInstructions;
     }
 
     public static Builder builder() {

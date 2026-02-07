@@ -3,7 +3,6 @@ package com.projection.advice;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.projection.annotation.Projectable;
-import com.projection.annotation.ProjectableFields;
 import com.projection.cache.CacheKey;
 import com.projection.cache.CachedResponse;
 import com.projection.cache.ProjectionCacheManager;
@@ -40,7 +39,7 @@ import java.util.Optional;
  * 1. Check if method has @Projectable annotation
  * 2. Check cache for existing full response
  * 3. Parse projection header
- * 4. Validate against @ProjectableFields if present
+ * 4. Validate against allowedFields from @Projectable if present
  * 5. Apply projection to response
  * 6. Cache full response for future requests
  */
@@ -110,8 +109,6 @@ public class ProjectionResponseBodyAdvice implements ResponseBodyAdvice<Object> 
 
         Method method = returnType.getMethod();
         Projectable projectable = method.getAnnotation(Projectable.class);
-        ProjectableFields projectableFields = method.getAnnotation(ProjectableFields.class);
-
         String projectionHeader = servletRequest.getHeader(properties.getHeaderName());
 
         FilterContext context = FilterContext.builder(properties).build();
@@ -126,8 +123,9 @@ public class ProjectionResponseBodyAdvice implements ResponseBodyAdvice<Object> 
 
             ProjectionTree projection = ProjectionTreeParser.parse(projectionHeader);
 
-            if (projectableFields != null) {
-                AllowlistValidator validator = AllowlistValidator.fromFieldSpecs(projectableFields.value());
+            String[] allowedFields = projectable.allowedFields();
+            if (allowedFields != null && allowedFields.length > 0) {
+                AllowlistValidator validator = AllowlistValidator.fromFieldSpecs(allowedFields);
                 if (validator != null) {
                     validator.validate(projection);
                 }
@@ -194,6 +192,16 @@ public class ProjectionResponseBodyAdvice implements ResponseBodyAdvice<Object> 
             return null;
         }
 
+        // 1. Requirement: Must be authenticated
+        java.security.Principal principal = request.getUserPrincipal();
+        if (principal == null) {
+            log.warn("User context required for {} but no Principal found", request.getRequestURI());
+            throw new IllegalStateException("User context caching requires an authenticated user");
+        }
+
+        String authenticatedId = principal.getName();
+
+        // 2. Validate Header if configured and present
         String headerName = null;
         if (properties.getCache() != null && properties.getCache().getUserContext() != null) {
             headerName = properties.getCache().getUserContext().getHeaderName();
@@ -202,19 +210,18 @@ public class ProjectionResponseBodyAdvice implements ResponseBodyAdvice<Object> 
         if (headerName != null && !headerName.isBlank()) {
             String headerValue = request.getHeader(headerName);
             if (headerValue != null && !headerValue.isBlank()) {
-                return headerValue;
+                // 3. Prevent spoofing: Header must match Principal
+                if (!headerValue.equals(authenticatedId)) {
+                    // 4. Sanitize logs (avoid logging raw PII)
+                    log.error("Security alert: User context header mismatch for {}. Header provided but does not match Principal.", 
+                        request.getRequestURI());
+                    throw new SecurityException("User context header does not match authenticated user");
+                }
             }
         }
 
-        if (request.getUserPrincipal() != null) {
-            return request.getUserPrincipal().getName();
-        }
-
-        String logHeaderName = (headerName != null) ? headerName : "<missing-header-config>";
-        throw new IllegalStateException(String.format(
-            "User context caching is enabled for %s but no user identifier found. " +
-            "Expected header '%s' or authenticated Principal. Aborting to prevent data leakage.",
-            request.getRequestURI(), logHeaderName));
+        // 5. Return the servers-validated ID
+        return authenticatedId;
     }
 
     private HttpServletRequest extractServletRequest(ServerHttpRequest request) {

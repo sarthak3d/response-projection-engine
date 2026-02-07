@@ -1,7 +1,7 @@
 package com.projection.exception;
 
 /**
- * Thrown when a requested field is not in the allowlist defined by @ProjectableFields.
+ * Thrown when a requested field is not in the allowlist defined by @Projectable.allowedFields.
  * Prevents exposure of fields that the endpoint author has explicitly disallowed.
  */
 public class FieldNotAllowedException extends ProjectionException {

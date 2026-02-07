@@ -2,7 +2,7 @@ package com.projection.example;
 
 import com.projection.annotation.InvalidateProjectionCache;
 import com.projection.annotation.Projectable;
-import com.projection.annotation.ProjectableFields;
+
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -46,8 +46,7 @@ public class UserController {
     }
 
     @GetMapping("/{id}")
-    @Projectable(ttlSeconds = 120)
-    @ProjectableFields({"id", "name", "email", "profile(avatar,bio)"})
+    @Projectable(ttlSeconds = 120, allowedFields = {"id", "name", "email", "profile(avatar,bio)"})
     public ResponseEntity<User> getUserById(@PathVariable Long id) {
         User user = users.get(id);
         if (user == null) {

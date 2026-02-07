@@ -9,6 +9,7 @@
   <a href="#quick-start">Quick Start</a> •
   <a href="#annotations">Annotations</a> •
   <a href="#configuration">Configuration</a> •
+  <a href="CHANGELOG.md">Change Log</a> •
   <a href="#license">License</a>
 </p>
 
@@ -46,14 +47,14 @@ This library allows frontends to request only the fields they need via HTTP head
 <dependency>
     <groupId>io.github.sarthak3d</groupId>
     <artifactId>response-projection-engine</artifactId>
-    <version>1.0.0</version>
+    <version>2.0.0</version>
 </dependency>
 ```
 
 #### Gradle
 
 ```java
-implementation("io.github.sarthak3d:response-projection-engine:1.0.0")
+implementation("io.github.sarthak3d:response-projection-engine:2.0.0")
 ```
 
 ### 2. Annotate Endpoints
@@ -162,11 +163,13 @@ public List<User> getAllUsers() {
 | `ttlSeconds` | `int` | Cache time-to-live in seconds. When set to `-1`, uses the global configuration value from `application.properties`. | `-1` |
 | `collection` | `boolean` | Set to `true` when the endpoint returns a list/array. Collections use a separate, typically shorter TTL (`response.projection.cache.collection-ttl-seconds`). | `false` |
 | `userContext` | `boolean` | Enables per-user cache isolation. When `true`, the cache key includes the user's identity (from header or Principal), preventing data leakage across users. | `false` |
+| `allowedFields` | `String[]` | Array of allowed field paths that clients can request. When specified, only these fields are projectable. Acts as an allowlist for sensitive data. | `{}` (All fields allowed) |
 
 **What the attributes control:**
 - **ttlSeconds**: How long the full response is cached before being re-fetched. Use `-1` to inherit from config, or set a specific value to override.
 - **collection**: Collections (lists) often change more frequently than single items, so they use a shorter cache TTL by default (10s vs 60s).
 - **userContext**: Prevents data leakage for user-specific endpoints. See examples below.
+- **allowedFields**: Restricts projectable fields (allowlist). If a client requests a field not in this list, they get a 400 error. Defaults to allowing all fields.
 
 **Per-User Cache Isolation (`userContext`):**
 
@@ -185,11 +188,20 @@ public User getCurrentUser() { ... }
 @GetMapping("/my-orders")
 @Projectable(userContext = true, collection = true)
 public List<Order> getMyOrders() { ... }
+
+// Secure endpoint with field allowlist
+@GetMapping("/{id}")
+@Projectable(allowedFields = {"id", "name", "email", "profile(avatar,bio)"})
+public User getUserById(@PathVariable Long id) { ... }
 ```
 
-User identity is extracted from:
-1. **Header** - Configured via `response.projection.cache.user-context.header-name` (default: `X-User-Id`)
-2. **Spring Security Principal** - Falls back to `request.getUserPrincipal().getName()`
+User identity is strictly derived from the **Authenticated Principal** (`request.getUserPrincipal().getName()`).
+
+**Security Rules:**
+1. **Authentication Required**: Endpoints with `userContext = true` **must** be accessed by an authenticated user. If no Principal is found, the request fails.
+2. **Header Validation**: If `response.projection.cache.user-context.header-name` is configured (e.g., `X-User-Id`), the client **may** send this header, but its value **must match** the authenticated Principal's name. A mismatch results in a security exception.
+
+This ensures that a malicious client cannot spoof another user's identity to poison the cache.
 
 | Endpoint Type | `userContext` | Cache Key Example |
 |---------------|---------------|-------------------|
@@ -197,30 +209,7 @@ User identity is extracted from:
 | User-specific (`/me`) | `true` | `GET:/me@user123` |
 | URL with userId (`/users/{id}`) | `false` | `GET:/users/5` (already unique) |
 
-### @ProjectableFields
-
-Restricts which fields can be projected. This creates an allowlist of fields that clients are permitted to request.
-
-```java
-@GetMapping("/{id}")
-@Projectable
-@ProjectableFields({"id", "name", "email", "profile(avatar,bio)"})
-public User getUserById(@PathVariable Long id) {
-    return userService.findById(id);
-}
-```
-
-**When @ProjectableFields is present:**
-- Only fields listed in the annotation can be requested
-- Requesting an unlisted field returns a `400` error with code `FIELD_NOT_ALLOWED`
-- Nested restrictions are enforced (e.g., if `profile(avatar)` is allowed, `profile(settings)` is rejected)
-
-**When @ProjectableFields is absent:**
-- All fields in the response object are projectable
-- No allowlist validation is performed
-- Clients can request any field that exists in the response
-
-**Use @ProjectableFields when:**
+**Use allowedFields when:**
 - The response contains sensitive fields that should never be exposed (e.g., `passwordHash`, `ssn`)
 - You want explicit control over what clients can request
 - The endpoint returns data with varying sensitivity levels
@@ -284,6 +273,7 @@ The library is strict by design - no partial success is allowed:
 | Parent field missing | 400 error |
 | Max depth exceeded | 400 error |
 | Cycle detected | 500 error |
+| Requesting disallowed field | 400 error |
 
 Error response format:
 ```json
@@ -293,6 +283,18 @@ Error response format:
         "message": "Requested field does not exist in response: profile.avatar",
         "path": "profile.avatar",
         "traceId": "abc123"
+    }
+}
+```
+
+Example: Disallowed field error
+```json
+{
+    "error": {
+        "code": "FIELD_NOT_ALLOWED",
+        "message": "Field is not allowed for projection: profile.settings",
+        "path": "profile.settings",
+        "traceId": "xyz789"
     }
 }
 ```
@@ -320,6 +322,10 @@ response.projection.header-name=X-Response-Fields
 # Depth and cycle limits
 response.projection.max-depth=5
 response.projection.cycle-detection.enabled=true
+
+# Threshold for array memoization optimization
+# Arrays with size >= this value use pre-compiled field instructions.
+response.projection.memoization-threshold=10
 
 # Caching
 response.projection.cache.enabled=true

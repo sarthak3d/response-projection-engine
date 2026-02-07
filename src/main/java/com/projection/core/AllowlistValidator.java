@@ -6,7 +6,7 @@ import java.util.Set;
 
 /**
  * Validates projection requests against an allowlist.
- * Used when @ProjectableFields annotation is present on an endpoint.
+ * Used when allowedFields are specified in @Projectable annotation.
  */
 public final class AllowlistValidator {
 

@@ -14,6 +14,15 @@ public class ProjectionProperties {
     private TraceId traceId = new TraceId();
     private ErrorConfig error = new ErrorConfig();
 
+    /**
+     * Threshold for array memoization optimization.
+     * Arrays with size >= this value use pre-compiled field instructions
+     * to avoid repeated Map lookups during projection.
+     * Default is 5, determined by profiling: smaller arrays have negligible
+     * lookup cost, while larger arrays benefit significantly from memoization.
+     */
+    private int memoizationThreshold = 5;
+
     public boolean isEnabled() {
         return enabled;
     }
@@ -68,6 +77,14 @@ public class ProjectionProperties {
 
     public void setError(ErrorConfig error) {
         this.error = error;
+    }
+
+    public int getMemoizationThreshold() {
+        return memoizationThreshold;
+    }
+
+    public void setMemoizationThreshold(int memoizationThreshold) {
+        this.memoizationThreshold = memoizationThreshold;
     }
 
     public static class CycleDetection {
