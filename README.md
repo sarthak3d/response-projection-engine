@@ -1,4 +1,4 @@
-<p align="center"><img src="src/main/resources/icon/logo.png" alt="Response Projection Engine Logo" width="300"></p>
+<p align="center"><img src="resources/icon/logo.png" alt="Response Projection Engine Logo" width="300"></p>
 <h1 align="center">Response Projection Engine</h1>
 
 <p align="center">
@@ -9,7 +9,7 @@
   <a href="#quick-start">Quick Start</a> •
   <a href="#annotations">Annotations</a> •
   <a href="#configuration">Configuration</a> •
-  <a href="CHANGELOG.md">Change Log</a> •
+  <a href="resources/CHANGELOG.md">Change Log</a> •
   <a href="#license">License</a>
 </p>
 
@@ -110,7 +110,7 @@ When writing projections in the `X-Response-Fields` header, follow these rules:
 4. **Multi-level nesting** is supported: `level1(level2(level3))`
 5. **No trailing commas** — `id,name,` is invalid
 
-For more examples, see [Example](Example.md)
+For more examples, see [Example](resources/Example.md)
 
 **Common Mistakes:**
 | Invalid | Why | Correct |

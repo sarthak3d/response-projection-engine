@@ -1,9 +1,12 @@
 package com.projection.integration;
 
+import com.projection.cache.ProjectionCacheManager;
 import com.projection.example.ExampleApplication;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
+import com.projection.example.UserController;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -20,6 +23,18 @@ class ProjectionIntegrationTest {
 
     @Autowired
     private MockMvc mockMvc;
+
+    @Autowired
+    private UserController userController;
+
+    @Autowired
+    private ProjectionCacheManager cacheManager;
+
+    @BeforeEach
+    void setUp() {
+        userController.reset();
+        cacheManager.evictAll();
+    }
 
     @Nested
     @DisplayName("Projection header behavior")
@@ -166,49 +181,119 @@ class ProjectionIntegrationTest {
 
         @Test
         void createUserEvictsListCache() throws Exception {
+            // 1. GET (Populate Cache)
             mockMvc.perform(get("/api/users")
-                    .header("X-Response-Fields", "id"))
-                .andExpect(status().isOk());
+                    .header("X-Response-Fields", "id,name"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(2)));
 
+            // 2. GET (Verify Cached - logically)
+            mockMvc.perform(get("/api/users")
+                    .header("X-Response-Fields", "id,name"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(2)));
+
+            // 3. POST (Invalidate Cache & Add Data)
             mockMvc.perform(post("/api/users")
                     .contentType(MediaType.APPLICATION_JSON)
-                    .content("{\"name\":\"Test\",\"email\":\"test@example.com\"}"))
+                    .content("{\"name\":\"New User\",\"email\":\"new@example.com\"}"))
                 .andExpect(status().isOk());
 
+            // 4. GET (Verify Cache Evicted & New Data Present)
             mockMvc.perform(get("/api/users")
-                    .header("X-Response-Fields", "id"))
+                    .header("X-Response-Fields", "id,name"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$", hasSize(greaterThan(2))));
+                .andExpect(jsonPath("$", hasSize(3)))
+                .andExpect(jsonPath("$[?(@.name == 'New User')]").exists());
         }
 
         @Test
         void deleteUserEvictsCaches() throws Exception {
-            // Create a user and capture the ID
+            // Setup: Create a user to delete
             String responseJson = mockMvc.perform(post("/api/users")
                     .contentType(MediaType.APPLICATION_JSON)
                     .content("{\"name\":\"ToDelete\",\"email\":\"delete@example.com\"}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.id").exists())
-                .andReturn()
-                .getResponse()
-                .getContentAsString();
-
-            // Extract the ID from response
+                .andReturn().getResponse().getContentAsString();
+            
             Integer id = com.jayway.jsonpath.JsonPath.read(responseJson, "$.id");
             long userId = id.longValue();
 
-            // Verify the user exists
-            mockMvc.perform(get("/api/users/" + userId))
+            // 1. GET (Populate Cache)
+            mockMvc.perform(get("/api/users/" + userId)
+                    .header("X-Response-Fields", "id,name"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.name").value("ToDelete"));
 
-            // Delete the user
+            // 2. GET (Verify Cached)
+            mockMvc.perform(get("/api/users/" + userId)
+                    .header("X-Response-Fields", "id,name"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("ToDelete"));
+
+            // 3. DELETE (Invalidate Cache)
             mockMvc.perform(delete("/api/users/" + userId))
                 .andExpect(status().isNoContent());
 
-            // Verify cache was evicted - user should no longer exist
+            // 4. GET (Verify Cache Evicted - Should be 404)
             mockMvc.perform(get("/api/users/" + userId))
                 .andExpect(status().isNotFound());
+        }
+
+        @Test
+        void updateUserEvictsCache() throws Exception {
+            // 1. GET (Populate Cache)
+            mockMvc.perform(get("/api/users/1")
+                    .header("X-Response-Fields", "id,name"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("Alice Johnson"));
+
+            // 2. GET (Verify Cached)
+            mockMvc.perform(get("/api/users/1")
+                    .header("X-Response-Fields", "id,name"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("Alice Johnson"));
+
+            // 3. PUT (Update & Invalidate)
+            mockMvc.perform(put("/api/users/1")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("{\"name\":\"Alice Updated\",\"email\":\"alice@example.com\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("Alice Updated"));
+
+            // 4. GET (Verify Cache Evicted & New Data)
+            mockMvc.perform(get("/api/users/1")
+                    .header("X-Response-Fields", "id,name"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("Alice Updated"));
+        }
+
+        @Test
+        void patchUserEvictsCache() throws Exception {
+            // 1. GET (Populate Cache)
+            mockMvc.perform(get("/api/users/2")
+                    .header("X-Response-Fields", "id,name"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("Bob Smith"));
+
+            // 2. GET (Verify Cached)
+            mockMvc.perform(get("/api/users/2")
+                    .header("X-Response-Fields", "id,name"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("Bob Smith"));
+
+            // 3. PATCH (Partial Update & Invalidate)
+            mockMvc.perform(patch("/api/users/2")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("{\"name\":\"Bob Patched\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("Bob Patched"));
+
+            // 4. GET (Verify Cache Evicted & New Data)
+            mockMvc.perform(get("/api/users/2")
+                    .header("X-Response-Fields", "id,name"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("Bob Patched"));
         }
     }
 }

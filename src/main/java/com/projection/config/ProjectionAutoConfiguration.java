@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.projection.advice.CacheEvictionAspect;
 import com.projection.advice.ProjectionResponseBodyAdvice;
 import com.projection.cache.ProjectionCacheManager;
+import com.projection.interceptor.ProjectionCacheInterceptor;
 import com.projection.projector.JsonResponseProjector;
 import com.projection.projector.ResponseProjector;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
@@ -17,6 +18,10 @@ import org.springframework.context.annotation.EnableAspectJAutoProxy;
 /**
  * Auto-configuration for the Response Projection Framework.
  * Activated when response.projection.enabled=true (default).
+ * 
+ * Architecture:
+ *   - ProjectionCacheInterceptor: Handles cache hits (bypasses controller)
+ *   - ProjectionResponseBodyAdvice: Handles cache misses (caches response after controller)
  */
 @AutoConfiguration
 @EnableConfigurationProperties(ProjectionProperties.class)
@@ -35,6 +40,23 @@ public class ProjectionAutoConfiguration {
     @ConditionalOnMissingBean
     public ResponseProjector jsonResponseProjector(ProjectionProperties properties) {
         return new JsonResponseProjector(properties);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public ProjectionCacheInterceptor projectionCacheInterceptor(
+            ProjectionProperties properties,
+            ObjectMapper objectMapper,
+            ResponseProjector projector,
+            ProjectionCacheManager cacheManager) {
+        return new ProjectionCacheInterceptor(properties, objectMapper, projector, cacheManager);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public ProjectionWebMvcConfigurer projectionWebMvcConfigurer(
+            ProjectionCacheInterceptor cacheInterceptor) {
+        return new ProjectionWebMvcConfigurer(cacheInterceptor);
     }
 
     @Bean

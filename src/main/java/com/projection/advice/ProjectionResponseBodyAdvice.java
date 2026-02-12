@@ -4,7 +4,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.projection.annotation.Projectable;
 import com.projection.cache.CacheKey;
-import com.projection.cache.CachedResponse;
 import com.projection.cache.ProjectionCacheManager;
 import com.projection.config.ProjectionProperties;
 import com.projection.core.AllowlistValidator;
@@ -13,6 +12,7 @@ import com.projection.core.ProjectionTree;
 import com.projection.core.ProjectionTreeParser;
 import com.projection.error.ProjectionErrorResponse;
 import com.projection.exception.ProjectionException;
+import com.projection.interceptor.ProjectionCacheInterceptor;
 import com.projection.projector.ResponseProjector;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
@@ -29,19 +29,17 @@ import org.springframework.http.server.ServletServerHttpResponse;
 import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseBodyAdvice;
 
-import java.lang.reflect.Method;
-import java.util.Optional;
-
 /**
- * Core interceptor that applies projection to responses from @Projectable endpoints.
+ * Response body advice that handles cache misses.
  * 
- * Flow:
- * 1. Check if method has @Projectable annotation
- * 2. Check cache for existing full response
- * 3. Parse projection header
- * 4. Validate against allowedFields from @Projectable if present
- * 5. Apply projection to response
- * 6. Cache full response for future requests
+ * This advice only runs when the interceptor allows the request through (cache miss).
+ * Responsibilities:
+ *   1. Convert response body to JsonNode
+ *   2. Cache full response for future requests
+ *   3. Apply projection if header present
+ *   4. Return projected response
+ * 
+ * Cache hits are handled by ProjectionCacheInterceptor before reaching this advice.
  */
 @ControllerAdvice
 public class ProjectionResponseBodyAdvice implements ResponseBodyAdvice<Object> {
@@ -70,12 +68,8 @@ public class ProjectionResponseBodyAdvice implements ResponseBodyAdvice<Object> 
             return false;
         }
 
-        Method method = returnType.getMethod();
-        if (method == null) {
-            return false;
-        }
-
-        return method.isAnnotationPresent(Projectable.class);
+        return returnType.getMethod() != null 
+            && returnType.getMethod().isAnnotationPresent(Projectable.class);
     }
 
     @Override
@@ -91,13 +85,6 @@ public class ProjectionResponseBodyAdvice implements ResponseBodyAdvice<Object> 
             return null;
         }
 
-        if (body instanceof ResponseEntity<?>) {
-            ResponseEntity<?> responseEntity = (ResponseEntity<?>) body;
-            if (!responseEntity.getStatusCode().is2xxSuccessful()) {
-                return body;
-            }
-        }
-
         if (isErrorResponse(body)) {
             return body;
         }
@@ -107,15 +94,23 @@ public class ProjectionResponseBodyAdvice implements ResponseBodyAdvice<Object> 
             return body;
         }
 
-        Method method = returnType.getMethod();
-        Projectable projectable = method.getAnnotation(Projectable.class);
-        String projectionHeader = servletRequest.getHeader(properties.getHeaderName());
+        Boolean cacheHit = (Boolean) servletRequest.getAttribute(ProjectionCacheInterceptor.CACHE_HIT_ATTRIBUTE);
+        if (Boolean.TRUE.equals(cacheHit)) {
+            return body;
+        }
 
+        Projectable projectable = (Projectable) servletRequest.getAttribute(ProjectionCacheInterceptor.PROJECTABLE_ATTRIBUTE);
+        if (projectable == null) {
+            projectable = returnType.getMethod().getAnnotation(Projectable.class);
+        }
+
+        String projectionHeader = servletRequest.getHeader(properties.getHeaderName());
         FilterContext context = FilterContext.builder(properties).build();
 
         try {
-            CacheKey cacheKey = buildCacheKey(servletRequest, projectable);
-            JsonNode fullResponse = getOrCacheFullResponse(body, cacheKey, projectable);
+            JsonNode fullResponse = objectMapper.valueToTree(body);
+
+            cacheFullResponse(servletRequest, fullResponse, projectable);
 
             if (projectionHeader == null || projectionHeader.isBlank()) {
                 return body;
@@ -138,7 +133,7 @@ public class ProjectionResponseBodyAdvice implements ResponseBodyAdvice<Object> 
 
             JsonNode projected = projector.project(fullResponse, projection, context);
             
-            log.debug("Projected response for {} [traceId={}]", 
+            log.debug("Projected response (cache miss) for {} [traceId={}]", 
                 servletRequest.getRequestURI(), context.getTraceId());
 
             return projected;
@@ -153,7 +148,6 @@ public class ProjectionResponseBodyAdvice implements ResponseBodyAdvice<Object> 
                 context.getTraceId()
             );
         } catch (IllegalStateException e) {
-            // Re-throw to prevent data leakage (handled by global error handler or results in 500)
             log.error("Security violation [traceId={}]: {}", context.getTraceId(), e.getMessage());
             throw e;
         } catch (Exception e) {
@@ -162,19 +156,19 @@ public class ProjectionResponseBodyAdvice implements ResponseBodyAdvice<Object> 
         }
     }
 
-    private JsonNode getOrCacheFullResponse(Object body, CacheKey cacheKey, Projectable projectable) {
-        Optional<CachedResponse> cached = cacheManager.get(cacheKey);
-        if (cached.isPresent()) {
-            return cached.get().getFullResponse();
+    private void cacheFullResponse(HttpServletRequest request, JsonNode fullResponse, Projectable projectable) {
+        if (!properties.getCache().isEnabled()) {
+            return;
         }
 
-        JsonNode fullResponse = objectMapper.valueToTree(body);
+        CacheKey cacheKey = (CacheKey) request.getAttribute(ProjectionCacheInterceptor.CACHE_KEY_ATTRIBUTE);
+        if (cacheKey == null) {
+            cacheKey = buildCacheKey(request, projectable);
+        }
 
         int ttl = projectable.ttlSeconds();
         boolean isCollection = projectable.collection();
         cacheManager.put(cacheKey, fullResponse, ttl, isCollection);
-
-        return fullResponse;
     }
 
     private CacheKey buildCacheKey(HttpServletRequest request, Projectable projectable) {
@@ -192,7 +186,6 @@ public class ProjectionResponseBodyAdvice implements ResponseBodyAdvice<Object> 
             return null;
         }
 
-        // 1. Requirement: Must be authenticated
         java.security.Principal principal = request.getUserPrincipal();
         if (principal == null) {
             log.warn("User context required for {} but no Principal found", request.getRequestURI());
@@ -201,7 +194,6 @@ public class ProjectionResponseBodyAdvice implements ResponseBodyAdvice<Object> 
 
         String authenticatedId = principal.getName();
 
-        // 2. Validate Header if configured and present
         String headerName = null;
         if (properties.getCache() != null && properties.getCache().getUserContext() != null) {
             headerName = properties.getCache().getUserContext().getHeaderName();
@@ -210,9 +202,7 @@ public class ProjectionResponseBodyAdvice implements ResponseBodyAdvice<Object> 
         if (headerName != null && !headerName.isBlank()) {
             String headerValue = request.getHeader(headerName);
             if (headerValue != null && !headerValue.isBlank()) {
-                // 3. Prevent spoofing: Header must match Principal
                 if (!headerValue.equals(authenticatedId)) {
-                    // 4. Sanitize logs (avoid logging raw PII)
                     log.error("Security alert: User context header mismatch for {}. Header provided but does not match Principal.", 
                         request.getRequestURI());
                     throw new SecurityException("User context header does not match authenticated user");
@@ -220,7 +210,6 @@ public class ProjectionResponseBodyAdvice implements ResponseBodyAdvice<Object> 
             }
         }
 
-        // 5. Return the servers-validated ID
         return authenticatedId;
     }
 

@@ -39,6 +39,11 @@ public class UserController {
         initSampleData();
     }
 
+    public void reset() {
+        users.clear();
+        initSampleData();
+    }
+
     @GetMapping
     @Projectable(collection = true)
     public List<User> getAllUsers() {
@@ -109,6 +114,31 @@ public class UserController {
             return ResponseEntity.notFound().build();
         }
         return ResponseEntity.noContent().build();
+    }
+
+    @PatchMapping("/{id}")
+    @InvalidateProjectionCache(paths = {"/api/users/{id}", "/api/users"})
+    public ResponseEntity<User> patchUser(
+            @PathVariable Long id,
+            @RequestBody Map<String, Object> updates) {
+        
+        User existing = users.get(id);
+        if (existing == null) {
+            return ResponseEntity.notFound().build();
+        }
+
+        String name = updates.containsKey("name") ? (String) updates.get("name") : existing.name();
+        String email = updates.containsKey("email") ? (String) updates.get("email") : existing.email();
+
+        User updated = new User(
+            id,
+            name,
+            email,
+            existing.profile(),
+            existing.orders()
+        );
+        users.put(id, updated);
+        return ResponseEntity.ok(updated);
     }
 
     private void initSampleData() {
